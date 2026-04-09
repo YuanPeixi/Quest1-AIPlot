@@ -1,0 +1,28 @@
+## .NET
+obj/
+bin/
+*.user
+*.suo
+.vs/
+.vscode/
+
+## Build artifacts
+publish/
+dist/
+
+## SQLite database (user data)
+*.db
+*.db-shm
+*.db-wal
+user-settings.json
+
+## Logs
+*.log
+logs/
+
+## Docker
+.env
+
+## OS
+.DS_Store
+Thumbs.db

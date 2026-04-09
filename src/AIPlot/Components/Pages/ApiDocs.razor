@@ -1,0 +1,99 @@
+@page "/api-docs"
+@rendermode InteractiveServer
+
+<PageTitle>API 文档 — AIPlot</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-2">📡 REST API 文档</MudText>
+<MudText Typo="Typo.body2" Class="mb-4" Style="opacity:0.7">
+    所有功能均通过 Minimal API 暴露，支持第三方集成。基础路径：<code>/api</code>
+</MudText>
+
+@foreach (var apiSection in _sections)
+{
+    <MudCard Elevation="1" Class="mb-4">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">@apiSection.Title</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @foreach (var ep in apiSection.Endpoints)
+            {
+                <div class="mb-3 pa-3" style="border:1px solid var(--mud-palette-divider);border-radius:6px">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">
+                        <MudChip T="string" Size="Size.Small" Color="@GetMethodColor(ep.Method)" Variant="Variant.Filled">
+                            @ep.Method
+                        </MudChip>
+                        <code style="font-size:14px">@ep.Path</code>
+                    </MudStack>
+                    <MudText Typo="Typo.body2">@ep.Description</MudText>
+                    @if (!string.IsNullOrEmpty(ep.Notes))
+                    {
+                        <MudText Typo="Typo.caption" Style="opacity:0.6;font-style:italic">@ep.Notes</MudText>
+                    }
+                </div>
+            }
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    private record ApiEndpoint(string Method, string Path, string Description, string Notes = "");
+    private record ApiSection(string Title, List<ApiEndpoint> Endpoints);
+
+    private readonly List<ApiSection> _sections =
+    [
+        new("故事管理", [
+            new("GET", "/api/stories", "获取所有故事列表"),
+            new("POST", "/api/stories", "创建新故事", "Body: { title, description }"),
+            new("GET", "/api/stories/{id}", "获取故事详情（含角色、消息、检查点、世界书）"),
+            new("PUT", "/api/stories/{id}", "更新故事标题/简介"),
+            new("DELETE", "/api/stories/{id}", "删除故事"),
+        ]),
+        new("角色管理", [
+            new("POST", "/api/stories/{id}/characters", "添加角色"),
+            new("PUT", "/api/stories/{id}/characters/{charId}", "更新角色信息"),
+            new("DELETE", "/api/stories/{id}/characters/{charId}", "删除角色"),
+            new("POST", "/api/characters/generate-card", "从文本描述快速生成角色卡（AI）", "Body: { promptText, modelId? }"),
+        ]),
+        new("AI 生成", [
+            new("POST", "/api/stories/{id}/generate", "流式生成角色对话（SSE）", "Body: { characterId, direction? }"),
+            new("POST", "/api/stories/{id}/narrate", "流式生成旁白（SSE）", "Body: { direction? }"),
+            new("POST", "/api/stories/{id}/regenerate", "从指定序列位置重新生成（SSE）", "Body: { fromSequence, characterId, direction? }"),
+            new("POST", "/api/stories/{id}/review", "AI审核故事剧情", "Body: { instructions?, modelId? }"),
+        ]),
+        new("消息管理", [
+            new("POST", "/api/stories/{id}/messages", "手动添加消息", "Body: { characterId, content, type? }"),
+            new("DELETE", "/api/stories/{id}/messages/from/{sequence}", "删除指定序列号及之后的所有消息"),
+        ]),
+        new("检查点", [
+            new("GET", "/api/stories/{id}/checkpoints", "获取检查点列表"),
+            new("POST", "/api/stories/{id}/checkpoints", "创建检查点", "Body: { name, messageSequence, description? }"),
+            new("POST", "/api/stories/{id}/checkpoints/{cpId}/restore", "恢复到检查点（删除之后消息）"),
+            new("DELETE", "/api/stories/{id}/checkpoints/{cpId}", "删除检查点"),
+        ]),
+        new("世界书", [
+            new("GET", "/api/stories/{id}/worldbook", "获取世界书"),
+            new("PUT", "/api/stories/{id}/worldbook", "更新世界背景", "Body: { background }"),
+            new("POST", "/api/stories/{id}/worldbook/entries", "添加词条"),
+            new("PUT", "/api/stories/{id}/worldbook/entries/{entryId}", "更新词条"),
+            new("DELETE", "/api/stories/{id}/worldbook/entries/{entryId}", "删除词条"),
+            new("POST", "/api/stories/{id}/worldbook/generate", "AI生成世界书词条", "Body: { promptText, modelId? }"),
+        ]),
+        new("模型 & 设置", [
+            new("GET", "/api/models", "获取 OpenRouter 可用模型列表"),
+            new("GET", "/api/settings", "获取当前配置"),
+            new("POST", "/api/settings", "保存 OpenRouter 配置", "Body: { apiKey, defaultModel, siteUrl?, siteName? }"),
+            new("POST", "/api/settings/validate", "验证 API Key 有效性", "Body: { apiKey }"),
+        ]),
+    ];
+
+    private Color GetMethodColor(string method) => method switch
+    {
+        "GET" => Color.Info,
+        "POST" => Color.Success,
+        "PUT" => Color.Warning,
+        "DELETE" => Color.Error,
+        _ => Color.Default
+    };
+}

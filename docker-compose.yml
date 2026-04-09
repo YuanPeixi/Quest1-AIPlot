@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  aiplot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aiplot
+    ports:
+      - "8080:8080"
+    volumes:
+      - aiplot_data:/app/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      # 可选：通过环境变量配置 OpenRouter API Key
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  aiplot_data:
+    driver: local
