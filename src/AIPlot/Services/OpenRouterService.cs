@@ -184,9 +184,9 @@ public class OpenRouterService : IOpenRouterService
                     if (item.TryGetProperty("pricing", out var pricing))
                     {
                         if (pricing.TryGetProperty("prompt", out var pProp) && pProp.ValueKind == JsonValueKind.String)
-                            decimal.TryParse(pProp.GetString(), out var ppv) ;
+                            if (decimal.TryParse(pProp.GetString(), out var ppv)) pp = ppv;
                         if (pricing.TryGetProperty("completion", out var cProp) && cProp.ValueKind == JsonValueKind.String)
-                            decimal.TryParse(cProp.GetString(), out var pcv);
+                            if (decimal.TryParse(cProp.GetString(), out var pcv)) pc = pcv;
                     }
                     models.Add(new ModelInfo(id, name, desc, ctx, pp, pc));
                 }

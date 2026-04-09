@@ -40,7 +40,7 @@
             </MudCardActions>
         </MudCard>
 
-        @if (!string.IsNullOrWhiteSpace(Settings.ApiKey) == false)
+        @if (string.IsNullOrWhiteSpace(Settings.ApiKey))
         {
             <MudAlert Severity="Severity.Warning" Class="mt-3" Variant="Variant.Outlined">
                 尚未配置 OpenRouter API Key，请前往
