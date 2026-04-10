@@ -216,7 +216,7 @@ else
 }
 
 <!-- Add/Edit Character Dialog -->
-<MudDialog @bind-IsVisible="_charDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
+<MudDialog @bind-Visible="_charDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
     <TitleContent><MudText Typo="Typo.h6">@(_editingChar == null ? "添加角色" : "编辑角色")</MudText></TitleContent>
     <DialogContent>
         <MudGrid>
@@ -273,7 +273,7 @@ else
 </MudDialog>
 
 <!-- Checkpoint Dialog -->
-<MudDialog @bind-IsVisible="_checkpointDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Small, FullWidth=true })">
+<MudDialog @bind-Visible="_checkpointDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Small, FullWidth=true })">
     <TitleContent><MudText Typo="Typo.h6">创建检查点</MudText></TitleContent>
     <DialogContent>
         <MudTextField @bind-Value="_checkpointName" Label="检查点名称" Required="true" Variant="Variant.Outlined" />
@@ -286,7 +286,7 @@ else
 </MudDialog>
 
 <!-- World Entry Dialog -->
-<MudDialog @bind-IsVisible="_worldEntryDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
+<MudDialog @bind-Visible="_worldEntryDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
     <TitleContent><MudText Typo="Typo.h6">@(_editingWorldEntry == null ? "添加词条" : "编辑词条")</MudText></TitleContent>
     <DialogContent>
         <MudGrid>
@@ -319,7 +319,7 @@ else
 </MudDialog>
 
 <!-- Generate World Book Dialog -->
-<MudDialog @bind-IsVisible="_genWorldDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
+<MudDialog @bind-Visible="_genWorldDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
     <TitleContent><MudText Typo="Typo.h6">AI 生成世界书词条</MudText></TitleContent>
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mb-3">描述你的故事世界，AI将自动提取并整理为结构化词条。</MudText>

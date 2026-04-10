@@ -77,7 +77,7 @@ else
 }
 
 <!-- Create/Edit Dialog -->
-<MudDialog @bind-IsVisible="_dialogOpen" Options="_dialogOptions">
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">@(_editingStory == null ? "新建故事" : "编辑故事")</MudText>
     </TitleContent>
