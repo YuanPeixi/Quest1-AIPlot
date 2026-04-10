@@ -1,0 +1,30 @@
+<div class="message-actions d-flex gap-1 mt-1" style="opacity:0;transition:opacity 0.2s" 
+     @onmouseenter="Show" @onmouseleave="Hide">
+    <MudTooltip Text="从此处重新生成">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Refresh"
+                       OnClick="@(() => OnRegenerate.InvokeAsync(Sequence))"
+                       Style="width:22px;height:22px" />
+    </MudTooltip>
+    <MudTooltip Text="创建检查点">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Bookmark"
+                       OnClick="@(() => OnAddCheckpoint.InvokeAsync(Sequence))"
+                       Style="width:22px;height:22px" />
+    </MudTooltip>
+    <MudTooltip Text="删除此处及之后的内容">
+        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.DeleteSweep" Color="Color.Error"
+                       OnClick="@(() => OnDelete.InvokeAsync(Sequence))"
+                       Style="width:22px;height:22px" />
+    </MudTooltip>
+</div>
+
+@code {
+    [Parameter] public int Sequence { get; set; }
+    [Parameter] public EventCallback<int> OnRegenerate { get; set; }
+    [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public EventCallback<int> OnAddCheckpoint { get; set; }
+
+    private bool _visible = false;
+
+    private void Show() => _visible = true;
+    private void Hide() => _visible = false;
+}

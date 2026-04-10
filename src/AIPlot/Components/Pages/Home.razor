@@ -1,0 +1,123 @@
+@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>AIPlot — 多智能体剧情编写</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true" Class="mb-6">
+    🎭 AIPlot 多智能体剧情编写软件
+</MudText>
+<MudText Typo="Typo.subtitle1" Class="mb-2" Style="opacity:0.7">
+    当前代理模型：<strong>@AppSettingsService.AgentModel</strong>
+</MudText>
+
+<MudGrid Class="mt-4">
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard Elevation="3" Class="h-100">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.AutoStories" Size="Size.Large" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="mt-2">多角色 AI 剧情</MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    为每个角色分配 AI 模型，让多个 AI 协同演绎故事。
+                    支持 OpenRouter 接入数百种模型。
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/stories">开始创作</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard Elevation="3" Class="h-100">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.RateReview" Size="Size.Large" Color="Color.Secondary" />
+                <MudText Typo="Typo.h6" Class="mt-2">AI 审核评估</MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    引入专业评审 AI，实时评估剧情逻辑、角色一致性
+                    和情节发展，给出改进建议。
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Secondary" Href="/stories">查看示例</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard Elevation="3" Class="h-100">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.Restore" Size="Size.Large" Color="Color.Tertiary" />
+                <MudText Typo="Typo.h6" Class="mt-2">检查点 & 重新生成</MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    随时保存故事进度为检查点，支持从任意位置重新生成，
+                    探索不同的剧情走向。
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Tertiary" Href="/stories">了解更多</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard Elevation="3" Class="h-100">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Large" Color="Color.Warning" />
+                <MudText Typo="Typo.h6" Class="mt-2">角色卡 & 世界书生成</MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    从文本描述一键生成结构化角色卡和世界书词条，
+                    快速建立完整的故事世界。
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Warning" Href="/characters/generate">立即体验</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard Elevation="3" Class="h-100">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.Api" Size="Size.Large" Color="Color.Info" />
+                <MudText Typo="Typo.h6" Class="mt-2">OpenRouter API 接入</MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    支持 GPT-4o、Claude 3.5、Gemini 等数百种模型，
+                    通过 OpenRouter 统一管理。
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Info" Href="/settings">配置 API</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard Elevation="3" Class="h-100">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.Code" Size="Size.Large" Color="Color.Dark" />
+                <MudText Typo="Typo.h6" Class="mt-2">完整 REST API</MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    所有功能均通过 Minimal API 暴露，支持外部集成。
+                    流式输出（SSE）支持实时 AI 生成。
+                </MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Text" Color="Color.Dark" Href="/api-docs">API 文档</MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+<MudAlert Severity="Severity.Info" Class="mt-6" Variant="Variant.Outlined">
+    <MudText><strong>快速开始：</strong></MudText>
+    <ol style="margin: 8px 0 0 20px; line-height: 1.8">
+        <li>前往 <MudLink Href="/settings">设置</MudLink> 配置 OpenRouter API Key</li>
+        <li>前往 <MudLink Href="/stories">我的故事</MudLink> 创建新故事</li>
+        <li>添加角色并分配 AI 模型</li>
+        <li>开始多智能体剧情创作！</li>
+    </ol>
+</MudAlert>
+
+@code {
+    [Inject] private AppSettingsService AppSettingsService { get; set; } = default!;
+}

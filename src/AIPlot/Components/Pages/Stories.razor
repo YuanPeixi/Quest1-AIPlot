@@ -1,0 +1,166 @@
+@page "/stories"
+@rendermode InteractiveServer
+@inject IStoryService StoryService
+@inject NavigationManager Nav
+
+<PageTitle>我的故事 — AIPlot</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5">📖 我的故事</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+        新建故事
+    </MudButton>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+}
+else if (_stories.Count == 0)
+{
+    <MudPaper Elevation="1" Class="pa-8 text-center">
+        <MudIcon Icon="@Icons.Material.Filled.AutoStories" Size="Size.Large" Style="opacity:0.3;font-size:64px" />
+        <MudText Typo="Typo.h6" Class="mt-4" Style="opacity:0.5">还没有故事</MudText>
+        <MudText Typo="Typo.body2" Class="mt-2" Style="opacity:0.4">点击「新建故事」开始你的创作之旅</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+            新建故事
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudGrid>
+        @foreach (var story in _stories)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="2" Class="h-100" Style="cursor:pointer"
+                         @onclick="@(() => Nav.NavigateTo("/stories/" + story.Id))">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">@story.Title</MudText>
+                            <MudText Typo="Typo.caption" Style="opacity:0.6">
+                                @story.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                            </MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small">
+                                <MudMenuItem Icon="@Icons.Material.Filled.Edit"
+                                             OnClick="() => OpenEditDialog(story)">编辑</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error"
+                                             OnClick="() => DeleteStory(story.Id)">删除</MudMenuItem>
+                            </MudMenu>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudText Typo="Typo.body2" Style="opacity:0.7;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">
+                            @(string.IsNullOrWhiteSpace(story.Description) ? "（无简介）" : story.Description)
+                        </MudText>
+                        <MudStack Row="true" Class="mt-3" Spacing="1">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                @story.Characters.Count 个角色
+                            </MudChip>
+                        </MudStack>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary"
+                                   Href="@($"/stories/{story.Id}")">
+                            进入编辑
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+<!-- Create/Edit Dialog -->
+<MudDialog @bind-Visible="_dialogOpen" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_editingStory == null ? "新建故事" : "编辑故事")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_formTitle" Label="故事标题" Required="true"
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="_formDescription" Label="故事简介" Lines="4"
+                      Variant="Variant.Outlined" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseDialog">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveStory"
+                   Disabled="string.IsNullOrWhiteSpace(_formTitle)">
+            @(_editingStory == null ? "创建" : "保存")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<Story> _stories = [];
+    private bool _loading = true;
+    private bool _dialogOpen = false;
+    private string _formTitle = "";
+    private string _formDescription = "";
+    private Story? _editingStory;
+
+    private DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Small,
+        FullWidth = true,
+        CloseOnEscapeKey = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStories();
+    }
+
+    private async Task LoadStories()
+    {
+        _loading = true;
+        _stories = await StoryService.GetStoriesAsync();
+        _loading = false;
+    }
+
+    private void OpenCreateDialog()
+    {
+        _editingStory = null;
+        _formTitle = "";
+        _formDescription = "";
+        _dialogOpen = true;
+    }
+
+    private void OpenEditDialog(Story story)
+    {
+        _editingStory = story;
+        _formTitle = story.Title;
+        _formDescription = story.Description;
+        _dialogOpen = true;
+    }
+
+    private void CloseDialog() => _dialogOpen = false;
+
+    private async Task SaveStory()
+    {
+        if (string.IsNullOrWhiteSpace(_formTitle)) return;
+
+        if (_editingStory == null)
+        {
+            var story = await StoryService.CreateStoryAsync(_formTitle, _formDescription);
+            Nav.NavigateTo($"/stories/{story.Id}");
+        }
+        else
+        {
+            await StoryService.UpdateStoryAsync(_editingStory.Id, _formTitle, _formDescription);
+            await LoadStories();
+        }
+        CloseDialog();
+    }
+
+    private async Task DeleteStory(int id)
+    {
+        await StoryService.DeleteStoryAsync(id);
+        await LoadStories();
+    }
+}

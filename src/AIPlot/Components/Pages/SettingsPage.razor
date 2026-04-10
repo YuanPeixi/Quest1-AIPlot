@@ -1,0 +1,211 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject AppSettingsService AppSettings
+@inject IOpenRouterService OpenRouter
+@inject ISnackbar Snackbar
+
+<PageTitle>设置 — AIPlot</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">⚙️ 设置</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="7">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">OpenRouter API 配置</MudText>
+                    <MudText Typo="Typo.caption" Style="opacity:0.6">
+                        访问 <MudLink Href="https://openrouter.ai/keys" Target="_blank">openrouter.ai/keys</MudLink>
+                        获取 API Key
+                    </MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTextField @bind-Value="_apiKey"
+                              Label="API Key"
+                              InputType="@(_showKey ? InputType.Text : InputType.Password)"
+                              Variant="Variant.Outlined"
+                              Class="mb-3"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showKey ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                              OnAdornmentClick="@(() => _showKey = !_showKey)"
+                              HelperText="以 sk- 开头的密钥，或 Bearer token" />
+
+                <MudTextField @bind-Value="_defaultModel"
+                              Label="默认 AI 模型"
+                              Variant="Variant.Outlined"
+                              Class="mb-3"
+                              HelperText="OpenRouter 格式，如 openai/gpt-4o-mini" />
+
+                <MudTextField @bind-Value="_siteUrl"
+                              Label="站点 URL（可选）"
+                              Variant="Variant.Outlined"
+                              Class="mb-3"
+                              HelperText="用于 OpenRouter 日志追踪（HTTP-Referer）" />
+
+                <MudTextField @bind-Value="_siteName"
+                              Label="站点名称（可选）"
+                              Variant="Variant.Outlined"
+                              HelperText="用于 OpenRouter 日志追踪（X-Title）" />
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Outlined" OnClick="ValidateKey" Disabled="_validating">
+                    @(_validating ? "验证中..." : "验证 API Key")
+                </MudButton>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings">
+                    保存设置
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+
+        @if (_validationResult != null)
+        {
+            <MudAlert Severity="@(_validationResult.Value ? Severity.Success : Severity.Error)"
+                      Class="mt-3" Variant="Variant.Outlined">
+                @(_validationResult.Value ? "✅ API Key 有效" : "❌ API Key 无效，请检查")
+            </MudAlert>
+        }
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudCard Elevation="2" Class="mb-3">
+            <MudCardHeader>
+                <CardHeaderContent><MudText Typo="Typo.h6">系统信息</MudText></CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudList T="string" Dense="true">
+                    <MudListItem T="string">
+                        <MudText Typo="Typo.body2">
+                            <strong>代理模型：</strong> @AppSettingsService.AgentModel
+                        </MudText>
+                    </MudListItem>
+                    <MudListItem T="string">
+                        <MudText Typo="Typo.body2">
+                            <strong>API Key 状态：</strong>
+                            @(string.IsNullOrWhiteSpace(AppSettings.ApiKey)
+                                ? "❌ 未配置"
+                                : "✅ 已配置")
+                        </MudText>
+                    </MudListItem>
+                    <MudListItem T="string">
+                        <MudText Typo="Typo.body2">
+                            <strong>默认模型：</strong> @AppSettings.DefaultModel
+                        </MudText>
+                    </MudListItem>
+                </MudList>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent><MudText Typo="Typo.h6">可用模型</MudText></CardHeaderContent>
+                <CardHeaderActions>
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LoadModels"
+                                   Disabled="_loadingModels" Size="Size.Small" />
+                </CardHeaderActions>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (_loadingModels)
+                {
+                    <MudProgressLinear Indeterminate="true" />
+                }
+                else if (_models.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Style="opacity:0.5">点击刷新加载模型列表</MudText>
+                }
+                else
+                {
+                    <MudTextField @bind-Value="_modelFilter" Placeholder="搜索模型..." Variant="Variant.Outlined"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Dense="true" Class="mb-2" />
+                    <div style="max-height:300px;overflow-y:auto">
+                        @foreach (var m in FilteredModels)
+                        {
+                            <div class="d-flex align-center pa-1" style="border-bottom:1px solid var(--mud-palette-divider)">
+                                <div class="flex-grow-1">
+                                    <MudText Typo="Typo.body2">@m.Name</MudText>
+                                    <MudText Typo="Typo.caption" Style="opacity:0.5">@m.Id</MudText>
+                                </div>
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.ContentCopy"
+                                               OnClick="@(() => UseModel(m.Id))" Title="使用此模型" />
+                            </div>
+                        }
+                    </div>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _apiKey = "";
+    private string _defaultModel = "";
+    private string _siteUrl = "";
+    private string _siteName = "";
+    private bool _showKey = false;
+    private bool _validating = false;
+    private bool? _validationResult = null;
+    private bool _loadingModels = false;
+    private List<ModelInfo> _models = [];
+    private string _modelFilter = "";
+
+    private IEnumerable<ModelInfo> FilteredModels =>
+        string.IsNullOrWhiteSpace(_modelFilter)
+            ? _models.Take(50)
+            : _models.Where(m =>
+                m.Name.Contains(_modelFilter, StringComparison.OrdinalIgnoreCase) ||
+                m.Id.Contains(_modelFilter, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnInitialized()
+    {
+        _apiKey = AppSettings.ApiKey;
+        _defaultModel = AppSettings.DefaultModel;
+        _siteUrl = AppSettings.SiteUrl;
+        _siteName = AppSettings.SiteName;
+    }
+
+    private void SaveSettings()
+    {
+        AppSettings.UpdateSettings(_apiKey, _defaultModel, _siteUrl, _siteName);
+        Snackbar.Add("设置已保存", Severity.Success);
+    }
+
+    private async Task ValidateKey()
+    {
+        if (string.IsNullOrWhiteSpace(_apiKey)) return;
+        _validating = true;
+        _validationResult = null;
+        try
+        {
+            _validationResult = await OpenRouter.ValidateApiKeyAsync(_apiKey);
+        }
+        finally
+        {
+            _validating = false;
+        }
+    }
+
+    private async Task LoadModels()
+    {
+        _loadingModels = true;
+        try
+        {
+            _models = await OpenRouter.GetModelsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"加载模型列表失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingModels = false;
+        }
+    }
+
+    private void UseModel(string modelId)
+    {
+        _defaultModel = modelId;
+        Snackbar.Add($"已选择: {modelId}", Severity.Info);
+    }
+}

@@ -1,0 +1,853 @@
+@page "/stories/{StoryId:int}"
+@rendermode InteractiveServer
+@inject IStoryService StoryService
+@inject PlotGenerationService GenService
+@inject AppSettingsService Settings
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_story?.Title ?? "加载中...") — AIPlot</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    <MudText Class="mt-4 text-center">加载故事...</MudText>
+}
+else if (_story == null)
+{
+    <MudAlert Severity="Severity.Error">故事不存在</MudAlert>
+    <MudButton Href="/stories" StartIcon="@Icons.Material.Filled.ArrowBack">返回</MudButton>
+}
+else
+{
+    <MudGrid>
+        <!-- Left Panel: Story Messages -->
+        <MudItem xs="12" md="8">
+            <!-- Story Header -->
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/stories" Size="Size.Small" />
+                <MudText Typo="Typo.h5">@_story.Title</MudText>
+                <MudSpacer />
+                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                    <MudButton StartIcon="@Icons.Material.Filled.Bookmark" OnClick="OpenCheckpointDialog"
+                               Title="创建检查点">检查点</MudButton>
+                    <MudButton StartIcon="@Icons.Material.Filled.RateReview" OnClick="ReviewStory"
+                               Disabled="_generating" Color="Color.Secondary" Title="AI审核">审核</MudButton>
+                </MudButtonGroup>
+            </MudStack>
+
+            <!-- Messages Area -->
+            <MudPaper Elevation="1" Class="pa-3" Style="min-height:400px;max-height:65vh;overflow-y:auto" id="messages-container">
+                @if (_story.Messages.Count == 0)
+                {
+                    <div class="text-center pa-8" style="opacity:0.4">
+                        <MudIcon Icon="@Icons.Material.Filled.ChatBubbleOutline" Style="font-size:48px" />
+                        <MudText Typo="Typo.body1" Class="mt-2">故事还没有内容，从下方选择角色开始创作！</MudText>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var msg in _story.Messages.OrderBy(m => m.Sequence))
+                    {
+                        <MessageBubble Message="msg"
+                                       OnRegenerate="RegenerateFrom"
+                                       OnDelete="DeleteFrom"
+                                       OnAddCheckpoint="QuickCheckpoint" />
+                    }
+                }
+
+                @if (_generating && !string.IsNullOrEmpty(_streamingContent))
+                {
+                    <div class="mud-message-bubble generating pa-3 mb-2" style="border-left:3px solid var(--mud-palette-primary)">
+                        <MudText Typo="Typo.caption" Style="opacity:0.6">@_streamingCharName 正在思考...</MudText>
+                        <MudText>@_streamingContent<span class="typing-cursor">▌</span></MudText>
+                    </div>
+                }
+            </MudPaper>
+
+            <!-- Checkpoints Row -->
+            @if (_story.Checkpoints.Any())
+            {
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="mt-2">
+                    @foreach (var cp in _story.Checkpoints.OrderBy(c => c.MessageSequence))
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined"
+                                 Icon="@Icons.Material.Filled.Restore"
+                                 OnClick="() => RestoreCheckpoint(cp)"
+                                 Title="@($"恢复到: Seq {cp.MessageSequence}")">
+                            @cp.Name
+                        </MudChip>
+                    }
+                </MudStack>
+            }
+
+            <!-- Input Area -->
+            <MudPaper Elevation="2" Class="pa-3 mt-3">
+                <MudStack Row="true" AlignItems="AlignItems.End" Spacing="2">
+                    <MudSelect @bind-Value="_selectedCharacterId" Label="角色" Variant="Variant.Outlined"
+                               Style="min-width:160px" Dense="true">
+                        @foreach (var ch in _story.Characters)
+                        {
+                            <MudSelectItem Value="ch.Id">
+                                @ch.AvatarEmoji @ch.Name @(ch.IsAI ? "" : "（人工）")
+                            </MudSelectItem>
+                        }
+                        <MudSelectItem Value="-1">📖 旁白</MudSelectItem>
+                    </MudSelect>
+                    <MudTextField @bind-Value="_direction" Label="剧情方向提示（可选）"
+                                  Variant="Variant.Outlined" Class="flex-grow-1" />
+                </MudStack>
+
+                @if (_selectedCharacterId > 0)
+                {
+                    var selChar = _story.Characters.FirstOrDefault(c => c.Id == _selectedCharacterId);
+                    if (selChar != null && !selChar.IsAI)
+                    {
+                        <MudTextField @bind-Value="_manualContent" Label="输入对话内容" Lines="2"
+                                      Variant="Variant.Outlined" Class="mt-2" />
+                    }
+                }
+
+                <MudStack Row="true" Class="mt-2" Justify="Justify.FlexEnd" Spacing="2">
+                    @if (_generating)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.Stop" OnClick="CancelGeneration">
+                            停止生成
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Send"
+                                   Disabled="@(_selectedCharacterId == 0)"
+                                   OnClick="GenerateOrSubmit">
+                            @GetGenerateButtonText()
+                        </MudButton>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Right Panel: Characters + World Book -->
+        <MudItem xs="12" md="4">
+            <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true" Class="mb-3">
+                <!-- Characters Tab -->
+                <MudTabPanel Text="角色" Icon="@Icons.Material.Filled.People">
+                    <div Class="pa-2">
+                        <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.PersonAdd"
+                                   OnClick="OpenAddCharacterDialog" Class="mb-2">
+                            添加角色
+                        </MudButton>
+                        @foreach (var ch in _story.Characters.OrderBy(c => c.SortOrder))
+                        {
+                            <MudCard Elevation="0" Class="mb-2" Style="border:1px solid var(--mud-palette-divider)">
+                                <MudCardHeader Style="padding:8px 12px">
+                                    <CardHeaderAvatar>
+                                        <MudAvatar Style="@($"background:{ch.AvatarColor};font-size:1.2em")"
+                                                   Size="Size.Small">
+                                            @ch.AvatarEmoji
+                                        </MudAvatar>
+                                    </CardHeaderAvatar>
+                                    <CardHeaderContent>
+                                        <MudText Typo="Typo.subtitle2">@ch.Name</MudText>
+                                        <MudText Typo="Typo.caption" Style="opacity:0.6">
+                                            @(ch.IsAI ? ch.ModelId : "人工输入")
+                                        </MudText>
+                                    </CardHeaderContent>
+                                    <CardHeaderActions>
+                                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small">
+                                            <MudMenuItem OnClick="() => OpenEditCharacterDialog(ch)">编辑</MudMenuItem>
+                                            <MudMenuItem OnClick="() => DeleteCharacter(ch.Id)">删除</MudMenuItem>
+                                        </MudMenu>
+                                    </CardHeaderActions>
+                                </MudCardHeader>
+                            </MudCard>
+                        }
+                    </div>
+                </MudTabPanel>
+
+                <!-- World Book Tab -->
+                <MudTabPanel Text="世界书" Icon="@Icons.Material.Filled.Public">
+                    <div Class="pa-2">
+                        <MudTextField @bind-Value="_worldBackground" Label="世界背景" Lines="3"
+                                      Variant="Variant.Outlined" Class="mb-2" />
+                        <MudStack Row="true" Spacing="1" Class="mb-3">
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                       OnClick="SaveWorldBackground">保存背景</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary"
+                                       OnClick="OpenGenerateWorldBookDialog">AI生成词条</MudButton>
+                        </MudStack>
+
+                        <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="OpenAddWorldEntryDialog" Class="mb-2">
+                            添加词条
+                        </MudButton>
+
+                        @if (_worldBook?.Entries != null)
+                        {
+                            @foreach (var entry in _worldBook.Entries.OrderBy(e => e.SortOrder))
+                            {
+                                <MudExpansionPanel Text="@($"{entry.Title} [{entry.Category}]")"
+                                                   Dense="true" Class="mb-1">
+                                    <MudText Typo="Typo.body2">@entry.Content</MudText>
+                                    @if (!string.IsNullOrWhiteSpace(entry.Keywords))
+                                    {
+                                        <MudText Typo="Typo.caption" Style="opacity:0.6">
+                                            关键词：@entry.Keywords
+                                        </MudText>
+                                    }
+                                    <MudStack Row="true" Class="mt-1" Spacing="1">
+                                        <MudButton Size="Size.Small" OnClick="() => OpenEditWorldEntry(entry)">编辑</MudButton>
+                                        <MudButton Size="Size.Small" Color="Color.Error"
+                                                   OnClick="() => DeleteWorldEntry(entry.Id)">删除</MudButton>
+                                    </MudStack>
+                                </MudExpansionPanel>
+                            }
+                        }
+                    </div>
+                </MudTabPanel>
+            </MudTabs>
+        </MudItem>
+    </MudGrid>
+}
+
+<!-- Add/Edit Character Dialog -->
+<MudDialog @bind-Visible="_charDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
+    <TitleContent><MudText Typo="Typo.h6">@(_editingChar == null ? "添加角色" : "编辑角色")</MudText></TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_charForm.Name" Label="角色名称" Required="true" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudTextField @bind-Value="_charForm.AvatarEmoji" Label="头像Emoji" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudTextField @bind-Value="_charForm.AvatarColor" Label="头像颜色" Variant="Variant.Outlined"
+                              InputType="InputType.Color" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_charForm.Description" Label="外貌描述" Lines="2" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_charForm.Personality" Label="性格特点" Lines="2" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_charForm.Background" Label="角色背景" Lines="2" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_charForm.SpeakingStyle" Label="说话风格" Lines="1" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_charForm.Goals" Label="目标/动机" Lines="1" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="8">
+                <MudTextField @bind-Value="_charForm.ModelId" Label="AI模型ID (OpenRouter格式)" Variant="Variant.Outlined"
+                              HelperText="如: openai/gpt-4o-mini" />
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudCheckBox @bind-Value="_charForm.IsAI" Label="AI扮演" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="6" sm="2">
+                <MudCheckBox @bind-Value="_charForm.IsReviewer" Label="审核员" Color="Color.Secondary" />
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2">🤖 从文本描述快速生成角色卡</MudText>
+        <MudTextField @bind-Value="_charGeneratePrompt" Label="角色描述文本" Lines="3" Variant="Variant.Outlined" />
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="mt-2"
+                   OnClick="AutoGenerateCharCard" Disabled="_charGenerating">
+            @(_charGenerating ? "生成中..." : "AI生成角色卡")
+        </MudButton>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _charDialogOpen = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveCharacter"
+                   Disabled="string.IsNullOrWhiteSpace(_charForm.Name)">保存</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Checkpoint Dialog -->
+<MudDialog @bind-Visible="_checkpointDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Small, FullWidth=true })">
+    <TitleContent><MudText Typo="Typo.h6">创建检查点</MudText></TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_checkpointName" Label="检查点名称" Required="true" Variant="Variant.Outlined" />
+        <MudTextField @bind-Value="_checkpointDesc" Label="备注（可选）" Variant="Variant.Outlined" Class="mt-2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _checkpointDialogOpen = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateCheckpoint">创建</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- World Entry Dialog -->
+<MudDialog @bind-Visible="_worldEntryDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
+    <TitleContent><MudText Typo="Typo.h6">@(_editingWorldEntry == null ? "添加词条" : "编辑词条")</MudText></TitleContent>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" sm="8">
+                <MudTextField @bind-Value="_worldEntryForm.Title" Label="标题" Required="true" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect @bind-Value="_worldEntryForm.Category" Label="类别" Variant="Variant.Outlined">
+                    <MudSelectItem Value="@("地点")">地点</MudSelectItem>
+                    <MudSelectItem Value="@("人物")">人物</MudSelectItem>
+                    <MudSelectItem Value="@("规则")">规则</MudSelectItem>
+                    <MudSelectItem Value="@("历史")">历史</MudSelectItem>
+                    <MudSelectItem Value="@("物品")">物品</MudSelectItem>
+                    <MudSelectItem Value="@("其他")">其他</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_worldEntryForm.Content" Label="内容" Lines="4" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_worldEntryForm.Keywords" Label="关键词（逗号分隔）"
+                              Variant="Variant.Outlined" HelperText="消息中出现这些词时自动注入此词条" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _worldEntryDialogOpen = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveWorldEntry">保存</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<!-- Generate World Book Dialog -->
+<MudDialog @bind-Visible="_genWorldDialogOpen" Options="@(new DialogOptions { MaxWidth=MaxWidth.Medium, FullWidth=true })">
+    <TitleContent><MudText Typo="Typo.h6">AI 生成世界书词条</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">描述你的故事世界，AI将自动提取并整理为结构化词条。</MudText>
+        <MudTextField @bind-Value="_worldGenPrompt" Label="世界描述" Lines="6" Variant="Variant.Outlined"
+                      Placeholder="描述世界背景、重要地点、人物、规则等..." />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _genWorldDialogOpen = false">取消</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="GenerateWorldBook"
+                   Disabled="_worldGenLoading">
+            @(_worldGenLoading ? "生成中..." : "AI生成")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public int StoryId { get; set; }
+
+    private Story? _story;
+    private WorldBook? _worldBook;
+    private bool _loading = true;
+    private bool _generating = false;
+    private CancellationTokenSource? _genCts;
+
+    // Input state
+    private int _selectedCharacterId = 0;
+    private string _direction = "";
+    private string _manualContent = "";
+    private string _streamingContent = "";
+    private string _streamingCharName = "";
+
+    // Dialogs
+    private bool _charDialogOpen = false;
+    private bool _checkpointDialogOpen = false;
+    private bool _worldEntryDialogOpen = false;
+    private bool _genWorldDialogOpen = false;
+    private bool _charGenerating = false;
+    private bool _worldGenLoading = false;
+
+    private Character? _editingChar = null;
+    private CharacterForm _charForm = new();
+    private string _charGeneratePrompt = "";
+
+    private string _checkpointName = "";
+    private string _checkpointDesc = "";
+    private int _pendingCheckpointSeq = 0;
+
+    private string _worldBackground = "";
+    private WorldEntry? _editingWorldEntry = null;
+    private WorldEntryForm _worldEntryForm = new();
+    private string _worldGenPrompt = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStory();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            await JS.InvokeVoidAsync("scrollToBottom", "messages-container");
+        }
+    }
+
+    private async Task LoadStory()
+    {
+        _loading = true;
+        _story = await StoryService.GetStoryAsync(StoryId);
+        if (_story != null)
+        {
+            _worldBook = await StoryService.GetOrCreateWorldBookAsync(StoryId);
+            _worldBackground = _worldBook.Background;
+            if (_story.Characters.Any())
+                _selectedCharacterId = _story.Characters.First().Id;
+        }
+        _loading = false;
+    }
+
+    private string GetGenerateButtonText()
+    {
+        if (_selectedCharacterId == -1) return "生成旁白";
+        var ch = _story?.Characters.FirstOrDefault(c => c.Id == _selectedCharacterId);
+        if (ch == null) return "选择角色";
+        return ch.IsAI ? $"AI生成 ({ch.Name})" : "提交对话";
+    }
+
+    private async Task GenerateOrSubmit()
+    {
+        if (_story == null) return;
+
+        if (_selectedCharacterId == -1)
+        {
+            await GenerateNarration();
+            return;
+        }
+
+        var ch = _story.Characters.FirstOrDefault(c => c.Id == _selectedCharacterId);
+        if (ch == null) return;
+
+        if (ch.IsAI)
+            await GenerateAIMessage(ch);
+        else
+            await SubmitManualMessage(ch);
+    }
+
+    private async Task GenerateAIMessage(Character character)
+    {
+        if (_generating) return;
+        _generating = true;
+        _streamingContent = "";
+        _streamingCharName = character.Name;
+        _genCts = new CancellationTokenSource();
+
+        try
+        {
+            await foreach (var token in GenService.GenerateCharacterMessageAsync(
+                _story!, character, _direction, _genCts.Token))
+            {
+                _streamingContent += token;
+                StateHasChanged();
+            }
+
+            if (!string.IsNullOrEmpty(_streamingContent) && !_genCts.Token.IsCancellationRequested)
+            {
+                var msg = new StoryMessage
+                {
+                    StoryId = StoryId,
+                    CharacterId = character.Id,
+                    Content = _streamingContent,
+                    Type = MessageType.Dialogue,
+                    UsedModel = character.ModelId,
+                    GenerationHint = _direction
+                };
+                await StoryService.AddMessageAsync(msg);
+                _direction = "";
+                await LoadStory();
+            }
+        }
+        catch (OperationCanceledException) { /* user stopped */ }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"生成失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _generating = false;
+            _streamingContent = "";
+            _streamingCharName = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateNarration()
+    {
+        if (_generating) return;
+        _generating = true;
+        _streamingContent = "";
+        _streamingCharName = "旁白";
+        _genCts = new CancellationTokenSource();
+
+        try
+        {
+            await foreach (var token in GenService.GenerateNarrationAsync(
+                _story!, _direction, _genCts.Token))
+            {
+                _streamingContent += token;
+                StateHasChanged();
+            }
+
+            if (!string.IsNullOrEmpty(_streamingContent) && !_genCts.Token.IsCancellationRequested)
+            {
+                var msg = new StoryMessage
+                {
+                    StoryId = StoryId,
+                    Content = _streamingContent,
+                    Type = MessageType.Narration
+                };
+                await StoryService.AddMessageAsync(msg);
+                _direction = "";
+                await LoadStory();
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"生成失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _generating = false;
+            _streamingContent = "";
+            _streamingCharName = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task SubmitManualMessage(Character character)
+    {
+        if (string.IsNullOrWhiteSpace(_manualContent)) return;
+        var msg = new StoryMessage
+        {
+            StoryId = StoryId,
+            CharacterId = character.Id,
+            Content = _manualContent,
+            Type = MessageType.Dialogue
+        };
+        await StoryService.AddMessageAsync(msg);
+        _manualContent = "";
+        await LoadStory();
+    }
+
+    private void CancelGeneration() => _genCts?.Cancel();
+
+    private async Task ReviewStory()
+    {
+        if (_story == null || _generating) return;
+        _generating = true;
+        _streamingCharName = "审核员";
+
+        try
+        {
+            var review = await GenService.ReviewStoryAsync(_story, null, null);
+            var msg = new StoryMessage
+            {
+                StoryId = StoryId,
+                Content = review,
+                Type = MessageType.Review
+            };
+            await StoryService.AddMessageAsync(msg);
+            await LoadStory();
+            Snackbar.Add("审核完成", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"审核失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _generating = false;
+        }
+    }
+
+    private async Task RegenerateFrom(int sequence)
+    {
+        if (_story == null) return;
+        var ch = _story.Characters.FirstOrDefault(c => c.Id == _selectedCharacterId);
+        if (ch == null || !ch.IsAI)
+        {
+            Snackbar.Add("请先选择一个AI角色", Severity.Warning);
+            return;
+        }
+
+        await StoryService.DeleteMessagesFromSequenceAsync(StoryId, sequence);
+        await LoadStory();
+        await GenerateAIMessage(ch);
+    }
+
+    private async Task DeleteFrom(int sequence)
+    {
+        await StoryService.DeleteMessagesFromSequenceAsync(StoryId, sequence);
+        await LoadStory();
+        Snackbar.Add("已删除", Severity.Info);
+    }
+
+    private void QuickCheckpoint(int sequence)
+    {
+        _pendingCheckpointSeq = sequence;
+        _checkpointName = $"检查点 @Seq{sequence}";
+        _checkpointDesc = "";
+        _checkpointDialogOpen = true;
+    }
+
+    // ─── Checkpoint ──────────────────────────────────────
+
+    private void OpenCheckpointDialog()
+    {
+        var lastSeq = _story?.Messages.OrderByDescending(m => m.Sequence).FirstOrDefault()?.Sequence ?? 0;
+        _pendingCheckpointSeq = lastSeq;
+        _checkpointName = $"检查点 {DateTime.Now:HH:mm:ss}";
+        _checkpointDesc = "";
+        _checkpointDialogOpen = true;
+    }
+
+    private async Task CreateCheckpoint()
+    {
+        if (string.IsNullOrWhiteSpace(_checkpointName)) return;
+        await StoryService.CreateCheckpointAsync(StoryId, _checkpointName, _pendingCheckpointSeq, _checkpointDesc);
+        _checkpointDialogOpen = false;
+        await LoadStory();
+        Snackbar.Add($"检查点「{_checkpointName}」已创建", Severity.Success);
+    }
+
+    private async Task RestoreCheckpoint(Checkpoint cp)
+    {
+        await StoryService.RestoreCheckpointAsync(cp.Id);
+        await LoadStory();
+        Snackbar.Add($"已恢复到检查点「{cp.Name}」", Severity.Info);
+    }
+
+    // ─── Characters ──────────────────────────────────────
+
+    private void OpenAddCharacterDialog()
+    {
+        _editingChar = null;
+        _charForm = new CharacterForm { ModelId = Settings.DefaultModel };
+        _charGeneratePrompt = "";
+        _charDialogOpen = true;
+    }
+
+    private void OpenEditCharacterDialog(Character ch)
+    {
+        _editingChar = ch;
+        _charForm = new CharacterForm
+        {
+            Name = ch.Name,
+            Description = ch.Description,
+            Personality = ch.Personality,
+            Background = ch.Background,
+            SpeakingStyle = ch.SpeakingStyle,
+            Goals = ch.Goals,
+            ModelId = ch.ModelId,
+            AvatarColor = ch.AvatarColor,
+            AvatarEmoji = ch.AvatarEmoji,
+            IsAI = ch.IsAI,
+            IsReviewer = ch.IsReviewer
+        };
+        _charDialogOpen = true;
+    }
+
+    private async Task AutoGenerateCharCard()
+    {
+        if (string.IsNullOrWhiteSpace(_charGeneratePrompt)) return;
+        _charGenerating = true;
+        try
+        {
+            var card = await GenService.GenerateCharacterCardAsync(_charGeneratePrompt);
+            if (card != null)
+            {
+                _charForm.Name = card.Name;
+                _charForm.Description = card.Description;
+                _charForm.Personality = card.Personality;
+                _charForm.Background = card.Background;
+                _charForm.SpeakingStyle = card.SpeakingStyle;
+                _charForm.Goals = card.Goals;
+                _charForm.AvatarEmoji = card.AvatarEmoji;
+                Snackbar.Add("角色卡已生成！", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("生成失败，请检查API配置", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"生成失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _charGenerating = false;
+        }
+    }
+
+    private async Task SaveCharacter()
+    {
+        if (string.IsNullOrWhiteSpace(_charForm.Name)) return;
+
+        if (_editingChar == null)
+        {
+            var ch = new Character
+            {
+                Name = _charForm.Name,
+                Description = _charForm.Description,
+                Personality = _charForm.Personality,
+                Background = _charForm.Background,
+                SpeakingStyle = _charForm.SpeakingStyle,
+                Goals = _charForm.Goals,
+                ModelId = _charForm.ModelId,
+                AvatarColor = _charForm.AvatarColor,
+                AvatarEmoji = _charForm.AvatarEmoji,
+                IsAI = _charForm.IsAI,
+                IsReviewer = _charForm.IsReviewer
+            };
+            await StoryService.AddCharacterAsync(StoryId, ch);
+        }
+        else
+        {
+            _editingChar.Name = _charForm.Name;
+            _editingChar.Description = _charForm.Description;
+            _editingChar.Personality = _charForm.Personality;
+            _editingChar.Background = _charForm.Background;
+            _editingChar.SpeakingStyle = _charForm.SpeakingStyle;
+            _editingChar.Goals = _charForm.Goals;
+            _editingChar.ModelId = _charForm.ModelId;
+            _editingChar.AvatarColor = _charForm.AvatarColor;
+            _editingChar.AvatarEmoji = _charForm.AvatarEmoji;
+            await StoryService.UpdateCharacterAsync(_editingChar);
+        }
+
+        _charDialogOpen = false;
+        await LoadStory();
+    }
+
+    private async Task DeleteCharacter(int charId)
+    {
+        await StoryService.DeleteCharacterAsync(charId);
+        await LoadStory();
+    }
+
+    // ─── World Book ──────────────────────────────────────
+
+    private async Task SaveWorldBackground()
+    {
+        await StoryService.UpdateWorldBookAsync(StoryId, _worldBackground);
+        _worldBook = await StoryService.GetOrCreateWorldBookAsync(StoryId);
+        Snackbar.Add("世界背景已保存", Severity.Success);
+    }
+
+    private void OpenAddWorldEntryDialog()
+    {
+        _editingWorldEntry = null;
+        _worldEntryForm = new WorldEntryForm { Category = "其他" };
+        _worldEntryDialogOpen = true;
+    }
+
+    private void OpenEditWorldEntry(WorldEntry entry)
+    {
+        _editingWorldEntry = entry;
+        _worldEntryForm = new WorldEntryForm
+        {
+            Title = entry.Title,
+            Content = entry.Content,
+            Category = entry.Category,
+            Keywords = entry.Keywords
+        };
+        _worldEntryDialogOpen = true;
+    }
+
+    private async Task SaveWorldEntry()
+    {
+        if (string.IsNullOrWhiteSpace(_worldEntryForm.Title)) return;
+        var wb = await StoryService.GetOrCreateWorldBookAsync(StoryId);
+
+        if (_editingWorldEntry == null)
+        {
+            var entry = new WorldEntry
+            {
+                Title = _worldEntryForm.Title,
+                Content = _worldEntryForm.Content,
+                Category = _worldEntryForm.Category,
+                Keywords = _worldEntryForm.Keywords
+            };
+            await StoryService.AddWorldEntryAsync(wb.Id, entry);
+        }
+        else
+        {
+            _editingWorldEntry.Title = _worldEntryForm.Title;
+            _editingWorldEntry.Content = _worldEntryForm.Content;
+            _editingWorldEntry.Category = _worldEntryForm.Category;
+            _editingWorldEntry.Keywords = _worldEntryForm.Keywords;
+            await StoryService.UpdateWorldEntryAsync(_editingWorldEntry);
+        }
+
+        _worldEntryDialogOpen = false;
+        _worldBook = await StoryService.GetOrCreateWorldBookAsync(StoryId);
+        StateHasChanged();
+    }
+
+    private async Task DeleteWorldEntry(int entryId)
+    {
+        await StoryService.DeleteWorldEntryAsync(entryId);
+        _worldBook = await StoryService.GetOrCreateWorldBookAsync(StoryId);
+        StateHasChanged();
+    }
+
+    private void OpenGenerateWorldBookDialog()
+    {
+        _worldGenPrompt = _worldBackground;
+        _genWorldDialogOpen = true;
+    }
+
+    private async Task GenerateWorldBook()
+    {
+        if (string.IsNullOrWhiteSpace(_worldGenPrompt)) return;
+        _worldGenLoading = true;
+        try
+        {
+            var wb = await StoryService.GetOrCreateWorldBookAsync(StoryId);
+            var entries = await GenService.GenerateWorldBookAsync(_worldGenPrompt);
+            foreach (var e in entries)
+                await StoryService.AddWorldEntryAsync(wb.Id, e);
+
+            _worldBook = await StoryService.GetOrCreateWorldBookAsync(StoryId);
+            _genWorldDialogOpen = false;
+            Snackbar.Add($"已生成 {entries.Count} 个词条", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"生成失败: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _worldGenLoading = false;
+        }
+    }
+
+    // ─── Form models ─────────────────────────────────────
+
+    private class CharacterForm
+    {
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Personality { get; set; } = "";
+        public string Background { get; set; } = "";
+        public string SpeakingStyle { get; set; } = "";
+        public string Goals { get; set; } = "";
+        public string ModelId { get; set; } = "openai/gpt-4o-mini";
+        public string AvatarColor { get; set; } = "#7B5EA7";
+        public string AvatarEmoji { get; set; } = "🎭";
+        public bool IsAI { get; set; } = true;
+        public bool IsReviewer { get; set; } = false;
+    }
+
+    private class WorldEntryForm
+    {
+        public string Title { get; set; } = "";
+        public string Content { get; set; } = "";
+        public string Category { get; set; } = "其他";
+        public string Keywords { get; set; } = "";
+    }
+}

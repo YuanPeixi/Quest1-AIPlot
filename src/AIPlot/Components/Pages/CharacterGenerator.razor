@@ -1,0 +1,192 @@
+@page "/characters/generate"
+@rendermode InteractiveServer
+@inject PlotGenerationService GenService
+@inject AppSettingsService Settings
+@inject ISnackbar Snackbar
+
+<PageTitle>角色卡生成 — AIPlot</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">🎭 角色卡快速生成</MudText>
+<MudText Typo="Typo.body2" Class="mb-4" Style="opacity:0.7">
+    输入对角色的自然语言描述，AI将自动整理为结构化角色卡。
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">输入描述</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTextField @bind-Value="_promptText" Label="角色描述" Lines="10"
+                              Variant="Variant.Outlined"
+                              Placeholder="例如：一个来自北方王国的年轻魔法师，性格内向但意志坚定。他有着银白色的头发和冷静的蓝色眼睛。擅长冰系魔法，从小失去双亲，一直在寻找失踪的妹妹..." />
+                <MudSelect @bind-Value="_modelId" Label="使用模型" Variant="Variant.Outlined" Class="mt-3">
+                    <MudSelectItem Value="@("")">使用默认模型 (@Settings.DefaultModel)</MudSelectItem>
+                    <MudSelectItem Value="@("openai/gpt-4o")">GPT-4o</MudSelectItem>
+                    <MudSelectItem Value="@("openai/gpt-4o-mini")">GPT-4o Mini（快速）</MudSelectItem>
+                    <MudSelectItem Value="@("anthropic/claude-3.5-sonnet")">Claude 3.5 Sonnet</MudSelectItem>
+                    <MudSelectItem Value="@("anthropic/claude-3-haiku")">Claude 3 Haiku（快速）</MudSelectItem>
+                </MudSelect>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                           OnClick="GenerateCard" Disabled="_generating" FullWidth="true">
+                    @(_generating ? "AI生成中..." : "生成角色卡")
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+
+        @if (string.IsNullOrWhiteSpace(Settings.ApiKey))
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-3" Variant="Variant.Outlined">
+                尚未配置 OpenRouter API Key，请前往
+                <MudLink Href="/settings">设置</MudLink>配置后使用。
+            </MudAlert>
+        }
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        @if (_generatedCard != null)
+        {
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderAvatar>
+                        <MudAvatar Style="@($"background:{_cardColor};font-size:1.5em")">
+                            @_generatedCard.AvatarEmoji
+                        </MudAvatar>
+                    </CardHeaderAvatar>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">@_generatedCard.Name</MudText>
+                        <MudText Typo="Typo.caption">生成的角色卡</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                       OnClick="CopyJson" Title="复制JSON" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_generatedCard.Name" Label="角色名称" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_generatedCard.Description" Label="外貌描述" Lines="2" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_generatedCard.Personality" Label="性格特点" Lines="2" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_generatedCard.Background" Label="角色背景" Lines="2" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_generatedCard.SpeakingStyle" Label="说话风格" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_generatedCard.Goals" Label="目标/动机" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_generatedCard.AvatarEmoji" Label="头像Emoji" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudTextField @bind-Value="_generatedCard.ModelId" Label="AI模型ID" Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+                               OnClick="GenerateCard" Disabled="_generating">重新生成</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.ContentCopy"
+                               OnClick="CopyJson">复制角色卡JSON</MudButton>
+                </MudCardActions>
+            </MudCard>
+        }
+        else
+        {
+            <MudPaper Elevation="1" Class="pa-6 text-center" Style="min-height:300px;display:flex;align-items:center;justify-content:center;flex-direction:column">
+                <MudIcon Icon="@Icons.Material.Filled.PersonSearch" Style="font-size:64px;opacity:0.2" />
+                <MudText Style="opacity:0.4" Class="mt-3">角色卡将在此处显示</MudText>
+            </MudPaper>
+        }
+    </MudItem>
+</MudGrid>
+
+@if (!string.IsNullOrEmpty(_jsonOutput))
+{
+    <MudCard Elevation="1" Class="mt-4">
+        <MudCardHeader>
+            <CardHeaderContent><MudText Typo="Typo.subtitle2">JSON 输出</MudText></CardHeaderContent>
+            <CardHeaderActions>
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" OnClick="CopyJson" />
+            </CardHeaderActions>
+        </MudCardHeader>
+        <MudCardContent>
+            <pre style="font-size:12px;overflow:auto;max-height:200px">@_jsonOutput</pre>
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    private string _promptText = "";
+    private string _modelId = "";
+    private bool _generating = false;
+    private Character? _generatedCard;
+    private string _jsonOutput = "";
+    private string _cardColor = "#7B5EA7";
+
+    private readonly string[] _colors = [
+        "#7B5EA7", "#E91E63", "#2196F3", "#4CAF50", "#FF9800",
+        "#9C27B0", "#00BCD4", "#F44336", "#3F51B5", "#009688"
+    ];
+    private int _colorIndex = 0;
+
+    private async Task GenerateCard()
+    {
+        if (string.IsNullOrWhiteSpace(_promptText)) return;
+        _generating = true;
+
+        try
+        {
+            var model = string.IsNullOrWhiteSpace(_modelId) ? null : _modelId;
+            _generatedCard = await GenService.GenerateCharacterCardAsync(_promptText, model);
+
+            if (_generatedCard != null)
+            {
+                _cardColor = _colors[_colorIndex % _colors.Length];
+                _colorIndex++;
+                _generatedCard.AvatarColor = _cardColor;
+
+                _jsonOutput = System.Text.Json.JsonSerializer.Serialize(_generatedCard,
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                Snackbar.Add("角色卡生成成功！", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("生成失败，请检查 API 配置", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"错误: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _generating = false;
+        }
+    }
+
+    private async Task CopyJson()
+    {
+        if (_generatedCard == null) return;
+        _jsonOutput = System.Text.Json.JsonSerializer.Serialize(_generatedCard,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", _jsonOutput);
+        Snackbar.Add("已复制到剪贴板", Severity.Info);
+    }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+}

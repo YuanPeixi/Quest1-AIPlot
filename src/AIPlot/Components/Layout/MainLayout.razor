@@ -1,0 +1,63 @@
+﻿@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" IsDarkMode="_darkMode" />
+<MudPopoverProvider />
+<MudDialogProvider FullWidth="true" MaxWidth="MaxWidth.Medium" />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Primary" Dense="false">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
+                       Edge="Edge.Start" OnClick="@ToggleDrawer" />
+        <MudText Typo="Typo.h6" Class="ml-3">🎭 AIPlot 多智能体剧情编写</MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.caption" Class="mr-2 d-none d-sm-block" Style="opacity:0.7">
+            Powered by @AppSettingsService.AgentModel
+        </MudText>
+        <MudIconButton Icon="@(DarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                       Color="Color.Inherit" OnClick="@ToggleDarkMode" Title="切换深色模式" />
+        <MudIconButton Icon="@Icons.Material.Filled.Settings"
+                       Color="Color.Inherit" Href="/settings" Title="设置" />
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" Variant="DrawerVariant.Responsive">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.h6">🎭 AIPlot</MudText>
+        </MudDrawerHeader>
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    [Inject] private AppSettingsService AppSettingsService { get; set; } = default!;
+
+    private bool _drawerOpen = true;
+    private bool _darkMode = false;
+    private bool DarkMode => _darkMode;
+
+    private MudTheme _theme = new MudTheme
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#7B5EA7",
+            Secondary = "#4CAF50",
+            AppbarBackground = "#7B5EA7",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#9B7EC8",
+            Secondary = "#66BB6A",
+            AppbarBackground = "#3D1F6E",
+        }
+    };
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+    private void ToggleDarkMode() => _darkMode = !_darkMode;
+}
+

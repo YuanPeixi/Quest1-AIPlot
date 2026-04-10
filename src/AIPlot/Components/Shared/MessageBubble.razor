@@ -1,0 +1,145 @@
+@using AIPlot.Models
+
+<div class="@GetContainerClass() mb-3">
+    @if (Message.Type == MessageType.Narration)
+    {
+        <MudPaper Elevation="0" Class="pa-3" Style="border-left:3px solid var(--mud-palette-tertiary);background:var(--mud-palette-background-grey)">
+            <MudText Typo="Typo.caption" Style="opacity:0.6">📖 旁白</MudText>
+            <MudText Typo="Typo.body2" Style="font-style:italic;white-space:pre-wrap">@Message.Content</MudText>
+            <MessageActions Sequence="Message.Sequence" OnRegenerate="OnRegenerate" OnDelete="OnDelete" OnAddCheckpoint="OnAddCheckpoint" />
+        </MudPaper>
+    }
+    else if (Message.Type == MessageType.Review)
+    {
+        <MudPaper Elevation="1" Class="pa-3" Style="border:2px solid var(--mud-palette-secondary);border-radius:8px">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.RateReview" Color="Color.Secondary" Size="Size.Small" />
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">AI 剧情审核报告</MudText>
+                <MudSpacer />
+                <MudText Typo="Typo.caption" Style="opacity:0.5">@Message.CreatedAt.ToLocalTime().ToString("HH:mm")</MudText>
+            </MudStack>
+            <div class="review-content">
+                @((MarkupString)RenderMarkdown(Message.Content))
+            </div>
+        </MudPaper>
+    }
+    else if (Message.Type == MessageType.System)
+    {
+        <div class="text-center">
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@Message.Content</MudChip>
+        </div>
+    }
+    else // Dialogue
+    {
+        var ch = Message.Character;
+        var color = ch?.AvatarColor ?? "#888888";
+        var emoji = ch?.AvatarEmoji ?? "💬";
+        var name = ch?.Name ?? "未知";
+
+        <div class="d-flex gap-2 align-start">
+            <MudAvatar Style="@($"background:{color};font-size:1em;flex-shrink:0")" Size="Size.Small">
+                @emoji
+            </MudAvatar>
+            <div class="flex-grow-1">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-1">
+                    <MudText Typo="Typo.caption" Style="font-weight:600">@name</MudText>
+                    @if (!string.IsNullOrWhiteSpace(Message.UsedModel))
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default"
+                                 Style="height:16px;font-size:10px;padding:0 6px">
+                            @Message.UsedModel.Split('/').LastOrDefault()
+                        </MudChip>
+                    }
+                    <MudSpacer />
+                    <MudText Typo="Typo.caption" Style="opacity:0.4">@Message.CreatedAt.ToLocalTime().ToString("HH:mm")</MudText>
+                </MudStack>
+                <MudPaper Elevation="0" Class="pa-2" Style="@($"background:{color}18;border-radius:0 8px 8px 8px;white-space:pre-wrap")">
+                    @Message.Content
+                </MudPaper>
+                @if (!string.IsNullOrWhiteSpace(Message.GenerationHint))
+                {
+                    <MudText Typo="Typo.caption" Style="opacity:0.4;font-style:italic">方向：@Message.GenerationHint</MudText>
+                }
+                <MessageActions Sequence="Message.Sequence" OnRegenerate="OnRegenerate" OnDelete="OnDelete" OnAddCheckpoint="OnAddCheckpoint" />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StoryMessage Message { get; set; } = default!;
+    [Parameter] public EventCallback<int> OnRegenerate { get; set; }
+    [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public EventCallback<int> OnAddCheckpoint { get; set; }
+
+    private string GetContainerClass() => Message.Type switch
+    {
+        MessageType.Review => "review-message",
+        MessageType.System => "system-message",
+        _ => "dialogue-message"
+    };
+
+    private static string RenderMarkdown(string text)
+    {
+        // Simple markdown to HTML (bold, italic, headers, lists)
+        if (string.IsNullOrEmpty(text)) return "";
+
+        var sb = new System.Text.StringBuilder();
+        var lines = text.Split('\n');
+        bool inList = false;
+
+        foreach (var line in lines)
+        {
+            var l = System.Web.HttpUtility.HtmlEncode(line.TrimEnd());
+
+            if (l.StartsWith("### "))
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                sb.Append($"<h4>{l[4..]}</h4>");
+            }
+            else if (l.StartsWith("## "))
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                sb.Append($"<h3>{l[3..]}</h3>");
+            }
+            else if (l.StartsWith("# "))
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                sb.Append($"<h2>{l[2..]}</h2>");
+            }
+            else if (l.StartsWith("- ") || l.StartsWith("* "))
+            {
+                if (!inList) { sb.Append("<ul>"); inList = true; }
+                sb.Append($"<li>{ApplyInline(l[2..])}</li>");
+            }
+            else if (System.Text.RegularExpressions.Regex.IsMatch(l, @"^\d+\. "))
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                var content = l.Substring(l.IndexOf(". ") + 2);
+                sb.Append($"<p style='margin:2px 0'>{ApplyInline(content)}</p>");
+            }
+            else if (string.IsNullOrWhiteSpace(l))
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                sb.Append("<br/>");
+            }
+            else
+            {
+                if (inList) { sb.Append("</ul>"); inList = false; }
+                sb.Append($"<p style='margin:4px 0'>{ApplyInline(l)}</p>");
+            }
+        }
+
+        if (inList) sb.Append("</ul>");
+        return sb.ToString();
+    }
+
+    private static string ApplyInline(string text)
+    {
+        // Bold
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        // Italic
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\*(.+?)\*", "<em>$1</em>");
+        return text;
+    }
+}
